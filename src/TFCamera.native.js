@@ -1,0 +1,1 @@
+export { Camera as TensorCamera } from 'expo-camera'
