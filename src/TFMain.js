@@ -1,8 +1,9 @@
 import React from 'react'
 import { Camera } from 'expo-camera'
-import { StyleSheet, Text, View, Dimensions, Platform } from 'react-native';
+import { StyleSheet, Platform } from 'react-native';
 import * as tf from '@tensorflow/tfjs';
 import * as FaceDetector from 'expo-face-detector';
+import { Progress, NativeBaseProvider, Box, Button, Center } from 'native-base';
 
 import { TensorCamera } from './TFCamera';
 
@@ -12,18 +13,30 @@ const webLoop = async (images, detectFace, onError) => {
         const nextImageTensor = nextImage.value
         if (!nextImageTensor) return;
         await detectFace(nextImageTensor)
+        tf.dispose(nextImageTensor)
         requestAnimationFrame(() => webLoop(images, detectFace, onError));
     } catch (error) {
         onError(`Exiting face-detection: ${error.message}`)
     }
 }
 
+const tests = [{
+    title: 'Detecting number of faces',
+    instructionText: 'Get into camera frame',
+    errorMessage: 'Ensure that there is one face in the frame',
+    test: (faceData) => {
+        console.log(faceData, 'faceData')
+        return faceData.length === 1
+    }
+}];
 export class TFMain extends React.Component {
     constructor(props) {
         super(props);
         this.state = {
             isTfReady: false,
             detectedFaces: undefined,
+            currentTestIndex: undefined,
+            tests: tests.map(test => ({ ...test, success: false }))
         };
     }
 
@@ -37,15 +50,42 @@ export class TFMain extends React.Component {
         }
     }
 
+    takeTests(faces) {
+        const { tests, currentTestIndex } = this.state
+        if (currentTestIndex === undefined) return;
+
+        const currentTestRes = tests[currentTestIndex]
+        if (currentTestRes.success) {
+            const hasNextTest = !!tests[currentTestIndex + 1]
+            if (hasNextTest) {
+                this.setState({ currentTestIndex: currentTestIndex + 1 })
+            }
+            return;
+        };
+        // console.log(currentTestRes, 'cTr')
+
+        const currentTest = currentTestRes?.test ?? null;
+        if (!currentTest) return;
+
+        const isCurrentTestSuccess = currentTest(faces)
+        // console.log('takeTests', isCurrentTestSuccess)
+        let newTests = [...tests]
+        if (isCurrentTestSuccess) {
+            newTests[currentTestIndex].success = true
+        }
+        else {
+            newTests[currentTestIndex].success = false
+        }
+        this.setState({ tests: newTests })
+    }
+
     async detectFace(imageTensor) {
-        const { detector } = this.state
-        if (!detector) return;
+        const { detector, currentTestIndex } = this.state
+        if (!detector || currentTestIndex === undefined) return;
 
         const estimationConfig = { flipHorizontal: false };
         const faces = await detector.estimateFaces(imageTensor, estimationConfig);
-
-        console.log(faces)
-        this.setState({ detectedFaces: faces?.length ?? 0 })
+        this.takeTests(faces)
     }
 
     handleWebCameraStream(images) {
@@ -60,15 +100,42 @@ export class TFMain extends React.Component {
 
     handleNativeFaceDetection({ faces }) {
         // console.log(faces)
-        this.setState({ detectedFaces: faces?.length ?? 0 })
+        const { detector, currentTestIndex } = this.state
+        if (!detector || currentTestIndex === undefined) return;
+        this.takeTests(faces)
     }
 
     setWebDetector(detector) {
         this.setState({ detector })
     }
 
+    getProgress() {
+        const passed = this.state.tests.filter(({ success }) => success).length
+        const total = this.state.tests.length
+        const progress = (passed / total) * 100
+        return progress;
+    }
+
+    startOrCancel() {
+        const { currentTestIndex, tests } = this.state
+        if (currentTestIndex === undefined) {
+            this.setState({ currentTestIndex: 0 })
+            return;
+        }
+        this.setState({ currentTestIndex: undefined, tests: tests.map(test => ({ ...test, success: false })) })
+    }
+
+    allTestsDone() {
+        const { tests } = this.state
+        return tests.every(({ success }) => !!success)
+    }
+
     render() {
-        const { isTfReady, detectedFaces = 0 } = this.state;
+        const { isTfReady, currentTestIndex, tests } = this.state;
+
+        const progress = this.getProgress();
+
+        // console.log(progress, 'progress')
 
         const cmnCameraProps = {
             style: styles.camera,
@@ -82,7 +149,7 @@ export class TFMain extends React.Component {
             onReady: this.handleWebCameraStream.bind(this),
             onError: this.onSomeError,
             autorender: true,
-            maxFaces: 10,
+            maxFaces: 2,
         }
         const nativeCameraProps = {
             onFacesDetected: this.handleNativeFaceDetection.bind(this),
@@ -95,44 +162,42 @@ export class TFMain extends React.Component {
             }
         }
 
+        const allTestsDone = this.allTestsDone()
+
+        const startOrCancelOrRestart = allTestsDone ? 'Re-start' : currentTestIndex === undefined ? 'Start' : 'Cancel'
+        const instruction = allTestsDone ? 'Test: Ok' : currentTestIndex === undefined ? 'Press on start button to proceed' : tests[currentTestIndex]?.instructionText ?? tests[currentTestIndex]?.title
+
         return (
-            <View style={styles.container}>
+            <NativeBaseProvider>
                 {isTfReady ? (
-                    <>
-                        <TensorCamera
-                            {...(Platform.OS === 'web' ? webCameraProps : nativeCameraProps)}
-                            {...cmnCameraProps}
-                        />
-                        <Text style={styles.faceCounter}>No. of faces detected: {detectedFaces}</Text>
-                    </>
+                    <Box flex={1}>
+                        {instruction && (
+                            <Box textAlign="center" fontSize="lg">{instruction}</Box>
+                        )}
+                        <Progress value={progress} mx={10} mb={2} />
+                        <Center flex={1}>
+                            <TensorCamera
+                                {...(Platform.OS === 'web' ? webCameraProps : nativeCameraProps)}
+                                {...cmnCameraProps}
+                            />
+                        </Center>
+                        <Button onPress={this.startOrCancel.bind(this)} my={2} mx={10}>{startOrCancelOrRestart}</Button>
+                    </Box>
                 ) : (
-                    <Text>Getting ready or the system-failed; check console, in-case of any doubts!</Text>
+                    <Box flex={1}>
+                        Getting ready or the system-failed; check console, in-case of any doubts!
+                    </Box>
                 )}
-            </View>
+            </NativeBaseProvider>
         )
     }
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
     camera: {
-        flex: 1,
+        // flex: 1,
         borderRadius: 20,
-        height: Dimensions.get("screen").height,
-        width: Dimensions.get("screen").width,
-    },
-    faceCounter: {
-        height: 60,
-        width: Dimensions.get("screen").width,
-        fontSize: 32,
-        fontWeight: 'bold',
-        right: 0,
-        top: 0,
-        backgroundColor: 'grey',
-        color: 'white',
-        textAlign: 'right',
-        paddingRight: 20
+        width: 325,
+        height: 200
     }
 })
