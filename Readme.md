@@ -2,13 +2,13 @@
 
 This is a sort of POC for implementing feature of liveness-detection. Also, there is this relevant [article](https://osamaqarem.com/blog/intro-to-liveness-detection-with-react-native), that has been used as a guide for the core-logic in the native platform. The repo in that article is [here](https://github.com/osamaqarem/liveness-detection-react-native).
 
-The intent is -
+The intents are to -
 
 - [ ] be able to detect liveness through the camera on native as well as web.
 
 - [ ] be able to integrate the tensorflow-js for the web implementation; for on-device detection - since the [native-face-detection capability](https://docs.expo.dev/versions/latest/sdk/camera/#facedetectorsettings) isn't available for web.
 
-- [ ] as a sub-part to the web-support and analogous to the native functionality, be able to get `smileProbability`, `yawAngle`, `rollAngle`, `(right|left)EyeOpenProbability`. Because, until now, the [face-landmarks-detection](https://github.com/tensorflow/tfjs-models/tree/master/face-landmarks-detection) has only been helpful in detecting the face and landmarks on the web.
+- [ ] be able to get `smileProbability`, `yawAngle`, `rollAngle`, `(right|left)EyeOpenProbability` (as a sub-part to the support web, analogous to the native functionality). Because, until now, the [face-landmarks-detection](https://github.com/tensorflow/tfjs-models/tree/master/face-landmarks-detection) has only been helpful in detecting the face and landmarks on the web.
 
 
 # Progression
