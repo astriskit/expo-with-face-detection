@@ -3,7 +3,8 @@ import { Camera } from 'expo-camera'
 import { StyleSheet, Platform } from 'react-native';
 import * as tf from '@tensorflow/tfjs';
 import * as FaceDetector from 'expo-face-detector';
-import { Progress, NativeBaseProvider, Box, Button, Center } from 'native-base';
+import { Progress, NativeBaseProvider, Box, Button, Center, VStack } from 'native-base';
+import Constants from 'expo-constants'
 
 import { TensorCamera } from './TFCamera';
 
@@ -20,24 +21,99 @@ const webLoop = async (images, detectFace, onError) => {
     }
 }
 
+const detections = {
+    BLINK: { instruction: "Blink both eyes", minProbability: 0.3 },
+    TURN_HEAD_LEFT: { instruction: "Turn head left", minAngle: 15 },
+    TURN_HEAD_RIGHT: { instruction: "Turn head right", minAngle: 15 },
+    // NOD: { instruction: "Nod", minDiff: 1.5 },
+    SMILE: { instruction: "Smile", minProbability: 0.7 }
+}
+const nativeTests = [
+    {
+        title: 'Detecting blinking eyes',
+        instructionText: 'Blink your both eyes',
+        errorMessage: 'Could not detect blink',
+        test: (faceData) => {
+            if (faceData.length > 1 || !faceData.length) return;
+
+            const face = faceData[0]
+            if (!face.hasOwnProperty('leftEyeOpenProbability')) return;
+
+            const isLeftEyeBlinking = face?.leftEyeOpenProbability <= detections.BLINK.minProbability
+            const isRightEyeBlinking = face?.rightEyeOpenProbability <= detections.BLINK.minProbability
+            const isBlinking = isLeftEyeBlinking && isRightEyeBlinking
+
+            return isBlinking;
+        }
+    },
+    {
+        title: 'Detecting left turn',
+        instructionText: 'Turn your head to left',
+        errorMessage: 'Could not detect left turn',
+        test: (faceData) => {
+            if (faceData.length > 1 || !faceData.length) return;
+            if (!faceData[0]?.hasOwnProperty('yawAngle')) return;
+            const yawAngle = faceData[0]?.yawAngle
+            const hasLeftTurned = yawAngle >= (270 + detections.TURN_HEAD_LEFT.minAngle)
+            return hasLeftTurned;
+        }
+    },
+    {
+        title: 'Detecting right turn',
+        instructionText: 'Turn your head to right',
+        errorMessage: 'Could not detect right turn',
+        test: (faceData) => {
+            if (faceData.length > 1 || !faceData.length) return;
+            if (!faceData[0].hasOwnProperty('yawAngle')) return;
+            const yawAngle = faceData[0]?.yawAngle
+            const hasLeftTurned = yawAngle <= 90 && yawAngle >= detections.TURN_HEAD_RIGHT.minAngle
+            return hasLeftTurned;
+        }
+    },
+    {
+        title: 'Detecting smile',
+        instructionText: 'Please smile',
+        errorMessage: 'Could not detect smile',
+        test: (faceData) => {
+            if (faceData.length > 1 || !faceData.length) return;
+            if (!faceData[0].hasOwnProperty('smilingProbability')) return;
+            const hasLeftTurned = faceData[0]?.smilingProbability >= detections.SMILE.minProbability
+            return hasLeftTurned;
+        }
+    }
+]
 const tests = [{
     title: 'Detecting number of faces',
     instructionText: 'Get into camera frame',
     errorMessage: 'Ensure that there is one face in the frame',
     test: (faceData) => {
-        console.log(faceData, 'faceData')
+        // console.log(faceData, 'faceData')
         return faceData.length === 1
     }
-}];
+},
+...(Platform.OS !== 'web' ? nativeTests : [])
+];
+
+const getWidth = () => {
+    return 200;
+}
+const getHeight = () => {
+    return (4 / 3) * getWidth()
+}
 export class TFMain extends React.Component {
     constructor(props) {
         super(props);
         this.state = {
             isTfReady: false,
-            detectedFaces: undefined,
+            cameraEl: null,
             currentTestIndex: undefined,
             tests: tests.map(test => ({ ...test, success: false }))
         };
+        this.setCameraRef = this.setCameraRef.bind(this)
+        this.startOrCancel = this.startOrCancel.bind(this)
+        this.handleNativeFaceDetection = this.handleNativeFaceDetection.bind(this)
+        this.setWebDetector = this.setWebDetector.bind(this)
+        this.handleWebCameraStream = this.handleWebCameraStream.bind(this)
     }
 
     async componentDidMount() {
@@ -99,9 +175,9 @@ export class TFMain extends React.Component {
     }
 
     handleNativeFaceDetection({ faces }) {
-        // console.log(faces)
-        const { detector, currentTestIndex } = this.state
-        if (!detector || currentTestIndex === undefined) return;
+        const { currentTestIndex } = this.state
+        // console.log(faces, 'faces')
+        if (currentTestIndex === undefined) return;
         this.takeTests(faces)
     }
 
@@ -115,6 +191,7 @@ export class TFMain extends React.Component {
         const progress = (passed / total) * 100
         return progress;
     }
+
 
     startOrCancel() {
         const { currentTestIndex, tests } = this.state
@@ -130,36 +207,40 @@ export class TFMain extends React.Component {
         return tests.every(({ success }) => !!success)
     }
 
+    setCameraRef(el) {
+        this.setState({ cameraEl: el })
+    }
+
     render() {
-        const { isTfReady, currentTestIndex, tests } = this.state;
+        const { isTfReady, currentTestIndex, tests, cameraEl } = this.state;
 
         const progress = this.getProgress();
-
-        // console.log(progress, 'progress')
 
         const cmnCameraProps = {
             style: styles.camera,
             type: Camera.Constants.Type.front,
-            resizeHeight: 200,
-            resizeWidth: 152,
+            resizeHeight: getWidth(),
+            resizeWidth: getHeight(),
+            ref: this.setCameraRef
         }
         const webCameraProps = {
             resizeDepth: 3,
-            onDetector: this.setWebDetector.bind(this),
-            onReady: this.handleWebCameraStream.bind(this),
+            onDetector: this.setWebDetector,
+            onReady: this.handleWebCameraStream,
             onError: this.onSomeError,
             autorender: true,
             maxFaces: 2,
+            cam: cameraEl
         }
         const nativeCameraProps = {
-            onFacesDetected: this.handleNativeFaceDetection.bind(this),
+            onFacesDetected: this.handleNativeFaceDetection,
             faceDetectorSettings: {
                 mode: FaceDetector.FaceDetectorMode.fast,
-                detectLandmarks: FaceDetector.FaceDetectorLandmarks.all,
-                runClassifications: FaceDetector.FaceDetectorClassifications.none,
-                minDetectionInterval: 100,
-                tracking: true,
-            }
+                detectLandmarks: FaceDetector.FaceDetectorLandmarks.none,
+                runClassifications: FaceDetector.FaceDetectorClassifications.all,
+                minDetectionInterval: 125,
+                tracking: false,
+            },
         }
 
         const allTestsDone = this.allTestsDone()
@@ -170,21 +251,23 @@ export class TFMain extends React.Component {
         return (
             <NativeBaseProvider>
                 {isTfReady ? (
-                    <Box flex={1}>
-                        {instruction && (
-                            <Box textAlign="center" fontSize="lg">{instruction}</Box>
-                        )}
-                        <Progress value={progress} mx={10} mb={2} />
+                    <Box flex={1} mt={Constants.statusBarHeight + 10}>
                         <Center flex={1}>
                             <TensorCamera
                                 {...(Platform.OS === 'web' ? webCameraProps : nativeCameraProps)}
                                 {...cmnCameraProps}
                             />
                         </Center>
-                        <Button onPress={this.startOrCancel.bind(this)} my={2} mx={10}>{startOrCancelOrRestart}</Button>
+                        <VStack flex={0.5} justifyContent="space-evenly" w="full" alignItems="stretch">
+                            {instruction && (
+                                <Box _text={{ textAlign: "center", fontSize: "lg" }} alignContent="stretch">{instruction}</Box>
+                            )}
+                            <Progress value={progress} mx={2} mb={2} minW="250" />
+                            <Button onPress={this.startOrCancel} my={2} mx={10}>{startOrCancelOrRestart}</Button>
+                        </VStack>
                     </Box>
                 ) : (
-                    <Box flex={1}>
+                    <Box flex={1} pt={Constants.statusBarHeight}>
                         Getting ready or the system-failed; check console, in-case of any doubts!
                     </Box>
                 )}
@@ -195,9 +278,7 @@ export class TFMain extends React.Component {
 
 const styles = StyleSheet.create({
     camera: {
-        // flex: 1,
-        borderRadius: 20,
-        width: 325,
-        height: 200
+        width: getWidth(),
+        height: getHeight()
     }
 })

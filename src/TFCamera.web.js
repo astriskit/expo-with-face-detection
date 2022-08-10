@@ -17,17 +17,16 @@ async function getFaceDetector(opts = {}) {
     return detector
 }
 
-const TensorCamera = (props) => {
-    const { onReady, resizeWidth, resizeHeight, type, onError, onDetector, maxFaces, ...restProps } = props
-
-    const [cam, setCam] = React.useState(null)
+const TensorCamera = React.forwardRef((props, ref) => {
+    const { onReady, resizeWidth, resizeHeight, type, onError, onDetector, maxFaces, cam, ...restProps } = props
 
     React.useEffect(() => {
-        if (cam && onReady) {
+        if (!!cam && onReady) {
             const videoEls = document.getElementsByTagName('video')
             if (videoEls.length === 1) {
                 getFaceDetector({ maxFaces }).then(detector => {
                     onDetector && onDetector(detector);
+                    console.log('videoEls[0]', videoEls[0])
                     return tf.data.webcam(videoEls[0], { resizeHeight, resizeWidth, type })
                 }).then((webcamIterator) => {
                     onReady(webcamIterator)
@@ -38,22 +37,18 @@ const TensorCamera = (props) => {
             }
         }
         return () => {
-            if (cam && cam.playing) {
+            if (!!cam && cam.playing) {
                 cam?.pause();
             }
         }
     }, [cam])
 
-    const refCb = (el) => {
-        setCam(el)
-    }
-
     return (
         <Camera
-            ref={refCb}
+            ref={ref}
             {...restProps}
         />
     )
-}
+})
 
 export { TensorCamera }
