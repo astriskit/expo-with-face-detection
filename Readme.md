@@ -1,6 +1,6 @@
 # Introduction
 
-This is a sort of POC for implementing feature of liveness-detection. Also, there is this relevant [article](https://osamaqarem.com/blog/intro-to-liveness-detection-with-react-native), that has been used as a guide for the core-logic in the native platform.
+This is a sort of POC for implementing feature of liveness-detection. Also, there is this relevant [article](https://osamaqarem.com/blog/intro-to-liveness-detection-with-react-native), that has been used as a guide for the core-logic in the native platform. The repo in that article is [here](https://github.com/osamaqarem/liveness-detection-react-native).
 
 The intent is -
 
